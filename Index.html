@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Le mie chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #ece5dd;
+    }
+
+    .app {
+      max-width: 600px;
+      margin: 0 auto;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border-left: 1px solid #bfbfbf;
+      border-right: 1px solid #bfbfbf;
+    }
+
+    header {
+      padding: 10px;
+      background: #075E54;
+      color: #fff;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header .title {
+      font-size: 18px;
+    }
+
+    .new-chat {
+      padding: 8px 10px;
+      border-bottom: 1px solid #ddd;
+      background: #f9f9f9;
+      display: flex;
+      gap: 6px;
+    }
+    .new-chat input {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 16px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    .new-chat button {
+      border: none;
+      background: #25D366;
+      color: #fff;
+      border-radius: 16px;
+      padding: 6px 10px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    ul#chatList {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .chat-item {
+      padding: 10px;
+      display: flex;
+      gap: 10px;
+      border-bottom: 1px solid #f0f0f0;
+      align-items: center;
+    }
+    .chat-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #128C7E;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .chat-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .chat-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chat-name {
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .chat-time {
+      font-size: 11px;
+      color: #999;
+    }
+    .chat-preview-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+    }
+    .chat-preview {
+      font-size: 13px;
+      color: #555;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .chat-unread {
+      min-width: 18px;
+      min-height: 18px;
+      padding: 0 5px;
+      background: #25D366;
+      border-radius: 9px;
+      color: #fff;
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+    }
+
+    .empty {
+      padding: 12px;
+      text-align: center;
+      font-size: 13px;
+      color: #777;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="title">La mia chat</div>
+    </header>
+
+    <div class="new-chat">
+      <input id="roomInput" type="text" placeholder="Nuova chat (es. Amici)">
+      <button id="createRoomBtn">Crea</button>
+    </div>
+
+    <ul id="chatList"></ul>
+    <div id="emptyState" class="empty">Nessuna chat. Crea una stanza sopra o aspetta messaggi.</div>
+  </div>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDzrXe97__7ANwKu2Z5S-wHoOVNZrjpQN8",
+      authDomain: "chat-cimino.firebaseapp.com",
+      databaseURL: "https://chat-cimino-default-rtdb.firebaseio.com",
+      projectId: "chat-cimino",
+      storageBucket: "chat-cimino.firebasestorage.app",
+      messagingSenderId: "1069237537564",
+      appId: "1:1069237537564:web:c09ab62c809bd6d395c8d9"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const roomsRef = db.ref("rooms");
+
+    const chatList = document.getElementById("chatList");
+    const emptyState = document.getElementById("emptyState");
+    const roomInput = document.getElementById("roomInput");
+    const createRoomBtn = document.getElementById("createRoomBtn");
+
+    function roomInitials(name) {
+      const parts = name.trim().split(/\s+/);
+      if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+      return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+    }
+
+    function formatTime(ts) {
+      if (!ts) return "";
+      const d = new Date(ts);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function updateEmptyState() {
+      emptyState.style.display = chatList.children.length ? "none" : "block";
+    }
+
+    // crea chat manualmente
+    createRoomBtn.addEventListener("click", () => {
+      const name = roomInput.value.trim();
+      if (!name) return;
+      const key = name.toLowerCase().replace(/\s+/g,"_");
+
+      roomsRef.child(key).child("meta").update({
+        displayName: name,
+        createdAt: Date.now()
+      });
+
+      roomInput.value = "";
+    });
+
+    // mostro tutte le room che hanno meta
+    roomsRef.on("child_added", snap => {
+      const roomKey = snap.key;
+      const metaRef = roomsRef.child(roomKey).child("meta");
+
+      const li = document.createElement("li");
+      li.className = "chat-item";
+      li.dataset.room = roomKey;
+      li.addEventListener("click", () => {
+        const url = "chat.html?room=" + encodeURIComponent(roomKey);
+        window.location.href = url;
+      });
+
+      const avatarDiv = document.createElement("div");
+      avatarDiv.className = "chat-avatar";
+      avatarDiv.textContent = roomInitials(roomKey);
+
+      const mainDiv = document.createElement("div");
+      mainDiv.className = "chat-main";
+
+      const titleRow = document.createElement("div");
+      titleRow.className = "chat-title-row";
+
+      const nameDiv = document.createElement("div");
+      nameDiv.className = "chat-name";
+      titleRow.appendChild(nameDiv);
+
+      const timeDiv = document.createElement("div");
+      timeDiv.className = "chat-time";
+      titleRow.appendChild(timeDiv);
+
+      const previewRow = document.createElement("div");
+      previewRow.className = "chat-preview-row";
+
+      const previewDiv = document.createElement("div");
+      previewDiv.className = "chat-preview";
+      previewRow.appendChild(previewDiv);
+
+      const unreadSpan = document.createElement("span");
+      unreadSpan.className = "chat-unread";
+      unreadSpan.style.display = "none";
+      previewRow.appendChild(unreadSpan);
+
+      mainDiv.appendChild(titleRow);
+      mainDiv.appendChild(previewRow);
+
+      li.appendChild(avatarDiv);
+      li.appendChild(mainDiv);
+      chatList.appendChild(li);
+      updateEmptyState();
+
+      // aggiorna nome / ultimo messaggio
+      metaRef.on("value", msnap => {
+        const meta = msnap.val() || {};
+        nameDiv.textContent = meta.displayName || roomKey;
+        avatarDiv.textContent = roomInitials(meta.displayName || roomKey);
+        if (meta.lastMessage) {
+          const lm = meta.lastMessage;
+          const prefix = lm.from ? (lm.from + ": ") : "";
+          previewDiv.textContent = prefix + (lm.text || lm.type || "");
+          timeDiv.textContent = formatTime(lm.createdAt);
+        }
+      });
+
+      // contatore "finto" non letti: numero messaggi totali
+      roomsRef.child(roomKey).child("messages").on("value", vsnap => {
+        const count = vsnap.numChildren();
+        if (count > 0) {
+          unreadSpan.style.display = "inline-flex";
+          unreadSpan.textContent = count;
+        } else {
+          unreadSpan.style.display = "none";
+        }
+      });
+    });
+  </script>
+</body>
+</html>
